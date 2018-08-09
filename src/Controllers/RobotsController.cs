@@ -9,18 +9,21 @@ using Microsoft.SyndicationFeed;
 using Microsoft.SyndicationFeed.Atom;
 using Microsoft.SyndicationFeed.Rss;
 using Miniblog.Core.Services;
+using WebEssentials.AspNetCore.Pwa;
 
 namespace Miniblog.Core.Controllers
 {
     public class RobotsController : Controller
     {
-        private IBlogService _blog;
-        private IOptionsSnapshot<BlogSettings> _settings;
+        private readonly IBlogService _blog;
+        private readonly IOptionsSnapshot<BlogSettings> _settings;
+        private readonly WebManifest _manifest;
 
-        public RobotsController(IBlogService blog, IOptionsSnapshot<BlogSettings> settings)
+        public RobotsController(IBlogService blog, IOptionsSnapshot<BlogSettings> settings, WebManifest manifest)
         {
             _blog = blog;
             _settings = settings;
+            _manifest = manifest;
         }
 
         [Route("/robots.txt")]
@@ -104,7 +107,7 @@ namespace Miniblog.Core.Controllers
             Response.ContentType = "application/xml";
             string host = Request.Scheme + "://" + Request.Host;
 
-            using (XmlWriter xmlWriter = XmlWriter.Create(Response.Body, new XmlWriterSettings() { Async = true, Indent = true }))
+            using (XmlWriter xmlWriter = XmlWriter.Create(Response.Body, new XmlWriterSettings() { Async = true, Indent = true, Encoding = new UTF8Encoding(false) }))
             {
                 var posts = await _blog.GetPosts(10);
                 var writer = await GetWriter(type, xmlWriter, posts.Max(p => p.PubDate));
@@ -126,7 +129,7 @@ namespace Miniblog.Core.Controllers
                         item.AddCategory(new SyndicationCategory(category));
                     }
 
-                    item.AddContributor(new SyndicationPerson(_settings.Value.Owner, "test@example.com"));
+                    item.AddContributor(new SyndicationPerson("test@example.com", _settings.Value.Owner));
                     item.AddLink(new SyndicationLink(new Uri(item.Id)));
 
                     await writer.Write(item);
@@ -141,17 +144,17 @@ namespace Miniblog.Core.Controllers
             if (type.Equals("rss", StringComparison.OrdinalIgnoreCase))
             {
                 var rss = new RssFeedWriter(xmlWriter);
-                await rss.WriteTitle(_settings.Value.Name);
-                await rss.WriteDescription(_settings.Value.Description);
+                await rss.WriteTitle(_manifest.Name);
+                await rss.WriteDescription(_manifest.Description);
                 await rss.WriteGenerator("Miniblog.Core");
                 await rss.WriteValue("link", host);
                 return rss;
             }
 
             var atom = new AtomFeedWriter(xmlWriter);
-            await atom.WriteTitle(_settings.Value.Name);
+            await atom.WriteTitle(_manifest.Name);
             await atom.WriteId(host);
-            await atom.WriteSubtitle(_settings.Value.Description);
+            await atom.WriteSubtitle(_manifest.Description);
             await atom.WriteGenerator("Miniblog.Core", "https://github.com/madskristensen/Miniblog.Core", "1.0");
             await atom.WriteValue("updated", updated.ToString("yyyy-MM-ddTHH:mm:ssZ"));
             return atom;
